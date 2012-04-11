@@ -7,21 +7,8 @@
 
   <adapter
     factory="z3c.traverser.traverser.PluggableTraverser"
-    for=".proxyfolder.IProxyFolder
+    for=".proxyfolder.IProxyObject
          zope.publisher.interfaces.IPublisherRequest"
-    />
-
-  <adapter
-    factory="z3c.traverser.traverser.PluggableTraverser"
-    for=".proxyfolder.IProxyer
-         zope.publisher.interfaces.IPublisherRequest"
-    />
-
-  <subscriber
-    factory=".proxyfolder.ProxyTraverser"
-    for=".proxyfolder.IProxyer
-         zope.publisher.interfaces.IPublisherRequest"
-    provides="z3c.traverser.interfaces.ITraverserPlugin"
     />
 
 </configure>

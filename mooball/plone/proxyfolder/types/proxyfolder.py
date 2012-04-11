@@ -14,7 +14,13 @@ class IProxyFolder(form.Schema):
     base_url = schema.TextLine(title=u'Base URL')
 
 
+class IProxyObject(Interface):
+    """ A proxy object representig a URL fragment to the remote site.
+    """
+
+
 class ProxyFolder(Item):
+    grok.implements(IProxyObject)
 
     def acquireProxyFolder(self):
         return self
@@ -22,7 +28,7 @@ class ProxyFolder(Item):
 
 class ProxyTraverser(grok.MultiAdapter):
     grok.provides(z3c.traverser.interfaces.ITraverserPlugin)
-    grok.adapts(IProxyFolder,
+    grok.adapts(IProxyObject,
                 zope.publisher.interfaces.IPublisherRequest)
 
     def __init__(self, context, request):
@@ -41,19 +47,5 @@ class ProxyTraverser(grok.MultiAdapter):
                 self.context, name, self.request)
 
 
-class IProxyer( Interface ):
-    pass
-
-class Proxyer( OFS.SimpleItem.SimpleItem ):
-    implements( IProxyer )
-    
-    def __init__( self, base_url, context, request ):
-        self.url = [ base_url ]
-        self.context = context
-        self.request = request
-    
-    def join_url( self ):
-        return '/'.join( self.url )
-    
-    def __call__( self ):
-        return self.joinurl()
+class Proxyer(OFS.SimpleItem.SimpleItem):
+    implements(IProxyObject)
