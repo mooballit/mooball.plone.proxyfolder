@@ -1,2 +1,2 @@
 # python package
-from types.proxyfolder import IProxyFolder
+from types.proxyfolder import IProxyFolder, ProxyFolder
