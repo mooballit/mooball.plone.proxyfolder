@@ -2,6 +2,8 @@ from setuptools import setup, find_packages
 import os
 
 version = '0.1dev'
+tests_require = ['plone.app.testing',
+                ]
 
 setup(name='mooball.plone.proxyfolder',
       version=version,
@@ -35,4 +37,5 @@ setup(name='mooball.plone.proxyfolder',
       [z3c.autoinclude.plugin]
       target = plone
       """,
+      extras_require=dict(tests=tests_require),
       )
