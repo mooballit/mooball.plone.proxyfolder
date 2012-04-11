@@ -1,0 +1,34 @@
+<configure
+    xmlns="http://namespaces.zope.org/zope"
+    xmlns:grok="http://namespaces.zope.org/grok"
+    i18n_domain="mooball.plone.proxyfolder">
+
+  <grok:grok package="." />
+
+  <adapter
+    factory="z3c.traverser.traverser.PluggableTraverser"
+    for=".proxyfolder.IProxyFolder
+         zope.publisher.interfaces.IPublisherRequest"
+    />
+
+  <subscriber
+    factory=".proxyfolder.ProxyTraverser"
+    for=".proxyfolder.IProxyFolder
+         zope.publisher.interfaces.IPublisherRequest"
+    provides="z3c.traverser.interfaces.ITraverserPlugin"
+    />
+
+  <adapter
+    factory="z3c.traverser.traverser.PluggableTraverser"
+    for=".proxyfolder.IProxyer
+         zope.publisher.interfaces.IPublisherRequest"
+    />
+
+  <subscriber
+    factory=".proxyfolder.ProxyTraverser"
+    for=".proxyfolder.IProxyer
+         zope.publisher.interfaces.IPublisherRequest"
+    provides="z3c.traverser.interfaces.ITraverserPlugin"
+    />
+
+</configure>

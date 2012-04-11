@@ -1,0 +1,33 @@
+from zope.interface import implements
+
+from Products.Archetypes import atapi
+from Products.ATContentTypes.content import base, shemata
+
+from mooball.plona.proxyfolder.interfaces import IProxyFolder
+
+PFSchema = shemata.ATContentTypeSchema.copy() + atapi.Schema((
+    atapi.StringField(
+        name = "base_url",
+        widget = atapi.StringWidget(
+            label = u'Base URL'
+        ),
+        required = True,
+        searchable = False
+    ), 
+))
+
+PFSchema['title'].storage = atapi.AnnotationStorage()
+PFSchema['description'].storage = atapi.AnnotationStorage()
+
+shemata.finalizeATCTSchema( PFSchema, moveDiscussion = False )
+
+class ProxyFolder( base.ATCTContent ):
+    implements( IProxyFolder )
+    
+    meta_type = "ProxyFolder"
+    schema = PFSchema
+    
+    title = atapi.ATFieldProperty( 'title' )
+    description = atapi.ATFieldProperty( 'description' )
+
+atapi.registerType( ProxyFolder, 'ProxyFolder' )
