@@ -4,6 +4,7 @@ from plone.directives import form
 from zope import schema
 from zope.interface import Interface, implements
 import OFS.SimpleItem
+import z3c.traverser.interfaces
 import zope.component
 import zope.publisher.interfaces
 
@@ -19,7 +20,10 @@ class ProxyFolder(Item):
         return self
 
 
-class ProxyTraverser(object):
+class ProxyTraverser(grok.MultiAdapter):
+    grok.provides(z3c.traverser.interfaces.ITraverserPlugin)
+    grok.adapts(IProxyFolder,
+                zope.publisher.interfaces.IPublisherRequest)
 
     def __init__(self, context, request):
         self.context = context
@@ -35,6 +39,7 @@ class ProxyTraverser(object):
         if not base_url:
             raise zope.publisher.interfaces.NotFound(
                 self.context, name, self.request)
+
 
 class IProxyer( Interface ):
     pass
