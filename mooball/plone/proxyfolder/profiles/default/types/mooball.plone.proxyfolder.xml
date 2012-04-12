@@ -14,7 +14,7 @@
  <property name="schema">mooball.plone.proxyfolder.IProxyFolder</property> 
  
  <!-- class used for content items -->
- <property name="klass">mooball.plone.proxyfolder.ProxyFolder</property>
+ <property name="klass">plone.dexterity.content.Item</property>
  
  <!-- add permission -->
  <property name="add_permission">cmf.AddPortalContent</property>
