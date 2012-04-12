@@ -30,6 +30,7 @@ setup(name='mooball.plone.proxyfolder',
           'Products.CMFPlone',
           'plone.app.dexterity',
           'z3c.traverser',
+          'pyquery',
       ],
       entry_points="""
       # -*- Entry points: -*-
