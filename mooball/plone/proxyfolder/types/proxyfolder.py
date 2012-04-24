@@ -21,9 +21,10 @@ class IProxyFolder(form.Schema):
     title = schema.TextLine(title=u'Title')
     base_url = schema.TextLine(title=u'Base URL')
     proxy_images = schema.Bool( title = u'Proxy Images?', default = False )
-    content_selector = schema.TextLine(title=u'Content CSS Selector', required = False)
+    content_selector = schema.TextLine(title=u'Content CSS Selector', required = False, description = u'The CSS Selector will be used to grab a specific part of the remove html and place it within the plone design.')
     head_data = schema.Text(title=u'Content in Head', required = False)
     user_agent = schema.TextLine( title = u'HTTP User agent', required = False, description = u'The User Agent to pass with the proxy http requests. Leave empty to just pass through the clients User Agent.' )
+    url_attrs = schema.TextLine( title = u'Extra URL Attributes', required = False, description = u'Comma separated list of attribute names that contain URLs that needs rewriting (ie. other than the standard src and href)' )
     
 class ProxyFolder( Item ):
     implements( IProxyer )
@@ -120,11 +121,14 @@ class Proxyer(OFS.SimpleItem.SimpleItem):
                 
                 return url
             
-            for el in q( '*[href]' ):
-                q(el).attr( 'href', rewrite_url( q(el).attr( 'href' ) ) )
-
-            for el in q( '*[src]' ):
-                q(el).attr( 'src', rewrite_url( q(el).attr( 'src' ), el.tag == 'img' and not self.proxy_folder.proxy_images ) )
+            url_attrs = ['href','src']
+            
+            if self.proxy_folder.url_attrs:
+                url_attrs += [ a.strip() for a in str( self.proxy_folder.url_attrs ).split(',') ]
+            
+            for attr in url_attrs:
+                for el in q( '*[%s]' % attr ):
+                    q(el).attr( attr, rewrite_url( q(el).attr( attr ), el.tag == 'img' and not self.proxy_folder.proxy_images ) )
             
             # Grab specific content and place within normal plone page
             if self.proxy_folder.content_selector:
