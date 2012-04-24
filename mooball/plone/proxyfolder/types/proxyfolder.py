@@ -17,12 +17,12 @@ class IProxyer( Interface ):
     def get_data():
         '''Fetches the data from the provided url'''
 
-class IProxyFolder(form.Schema):
-    title = schema.TextLine(title=u'Title')
-    base_url = schema.TextLine(title=u'Base URL')
+class IProxyFolder( form.Schema ):
+    title = schema.TextLine( title=u'Title')
+    base_url = schema.TextLine( title=u'Base URL')
     proxy_images = schema.Bool( title = u'Proxy Images?', default = False )
-    content_selector = schema.TextLine(title=u'Content CSS Selector', required = False, description = u'The CSS Selector will be used to grab a specific part of the remove html and place it within the plone design.')
-    head_data = schema.Text(title=u'Content in Head', required = False)
+    content_selector = schema.TextLine( title=u'Content CSS Selector', required = False, description = u'The CSS Selector will be used to grab a specific part of the remove html and place it within the plone design.' )
+    head_data = schema.Text( title=u'Content in Head', required = False )
     user_agent = schema.TextLine( title = u'HTTP User agent', required = False, description = u'The User Agent to pass with the proxy http requests. Leave empty to just pass through the clients User Agent.' )
     url_attrs = schema.TextLine( title = u'Extra URL Attributes', required = False, description = u'Comma separated list of attribute names that contain URLs that needs rewriting (ie. other than the standard src and href)' )
     
@@ -72,7 +72,7 @@ class ProxyTraverser(object):
 
 def _get_data_cachekey( method, self ):
     # Will cache a specific page for a day.
-    return ( self.cur_url, time() // ( 60 * 60 * 24 ) )
+    return ( self.cur_url, time() // ( 60 * 60 * 24 ), self.proxy_folder.base_url, self.proxy_folder.proxy_images, self.proxy_folder.content_selector, self.proxy_folder.url_attrs )
 
 
 class Proxyer(OFS.SimpleItem.SimpleItem):
@@ -106,9 +106,9 @@ class Proxyer(OFS.SimpleItem.SimpleItem):
         self.request.response.setHeader( 'Content-Type', info['Content-Type'] )
         
         if info.gettype() == 'text/html':
-            # Rewrite any URLs (in src & href attribs)
             q = pq( con.read() )
             
+            # Rewrite any URLs (in src & href attribs + user specified ones)
             def rewrite_url( url, normalize_only = False ):
                 p = urlparse.urlsplit( url )
                 
