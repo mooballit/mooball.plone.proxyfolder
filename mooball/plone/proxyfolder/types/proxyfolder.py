@@ -10,6 +10,8 @@ import zope.component
 import zope.publisher.interfaces
 from pyquery import PyQuery as pq
 import urllib, urllib2, urlparse
+from time import time
+from plone.memoize import ram
 
 class IProxyer( Interface ):
     def get_data():
@@ -67,6 +69,11 @@ class ProxyTraverser(object):
         proxy.__parent__ = self.context
         return proxy.__of__(self.context)
 
+def _get_data_cachekey( method, self ):
+    # Will cache a specific page for a day.
+    return ( self.cur_url, time() // ( 60 * 60 * 24 ) )
+
+
 class Proxyer(OFS.SimpleItem.SimpleItem):
     implements(IProxyer)
     __parent__ = None
@@ -79,7 +86,7 @@ class Proxyer(OFS.SimpleItem.SimpleItem):
         self.proxy_folder = proxy_folder
         self.proxy_folder_addr = self.proxy_folder.absolute_url()
     
-    # TODO: Cache this function
+    @ram.cache( _get_data_cachekey )
     def get_data( self ):
         # Build the url
         cur_url = '/'.join( [ self.cur_url[0] ] + [ urllib.quote( p ) for p in self.cur_url[1:] ] )
@@ -123,7 +130,7 @@ class Proxyer(OFS.SimpleItem.SimpleItem):
             if self.proxy_folder.content_selector:
                 q = q( str( self.proxy_folder.content_selector ) )
             
-            return unicode( q )
+            return unicode( q ).replace( u'&#13;', u'\n' )
         else:
             return con.read()
 
