@@ -25,10 +25,10 @@
  </property>
  
  <!-- View information -->
- <property name="default_view">view</property>
+ <property name="default_view">index_html</property>
  <property name="default_view_fallback">False</property>
  <property name="view_methods">
-  <element value="view"/>
+  <element value="index_html"/>
  </property>
  
  <!-- Method aliases -->

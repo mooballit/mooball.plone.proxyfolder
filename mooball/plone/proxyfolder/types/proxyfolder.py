@@ -9,25 +9,36 @@ import z3c.traverser.interfaces
 import zope.component
 import zope.publisher.interfaces
 from pyquery import PyQuery as pq
-import urllib2, urlparse
+import urllib, urllib2, urlparse
 
+class IProxyer( Interface ):
+    def get_data():
+        '''Fetches the data from the provided url'''
 
 class IProxyFolder(form.Schema):
     title = schema.TextLine(title=u'Title')
     base_url = schema.TextLine(title=u'Base URL')
-
-
+    proxy_images = schema.Bool( title = u'Proxy Images?', default = False )
+    content_selector = schema.TextLine(title=u'Content CSS Selector', required = False)
+    head_data = schema.Text(title=u'Content in Head', required = False)
+    user_agent = schema.TextLine( title = u'HTTP User agent', required = False, description = u'The User Agent to pass with the proxy http requests. Leave empty to just pass through the clients User Agent.' )
+    
 class ProxyFolder( Item ):
-    def __call__( self ):
-        return 'aaaa'
+    implements( IProxyer )
+    
+    def get_data( self ):
+        proxy = Proxyer( self, self.REQUEST, [ self.base_url ], self )
+        proxy.__parent__ = self
+        return proxy.__of__(self).get_data()
+        
 
 class ProxyTraverser(object):
-
     def __init__(self, context, request):
         self.context = context
         self.request = request
-
+        
     def publishTraverse(self, request, name):
+        print name
         view = zope.component.queryMultiAdapter(
             (self.context, self.request), name=name)
         if view is not None:
@@ -48,33 +59,34 @@ class ProxyTraverser(object):
                 self.context.base_url = self.context.base_url[:-1]
             
             self.request['cur_remote_path'] = [ self.context.base_url ]
-            self.request['proxy_folder_path'] = self.context.absolute_url()
-        
+            self.request['proxy_folder'] = self.context
+
         self.request['cur_remote_path'].append( name )
         
-        proxy = Proxyer(self.request, self.request['cur_remote_path'],self.request['proxy_folder_path'])
-        #proxy.__parent__ = self.context
-        return proxy #.__of__(self.context)
-
-class IProxyer( Interface ):
-    pass
+        proxy = Proxyer( self.context, self.request, self.request['cur_remote_path'],self.request['proxy_folder'] )
+        proxy.__parent__ = self.context
+        return proxy.__of__(self.context)
 
 class Proxyer(OFS.SimpleItem.SimpleItem):
     implements(IProxyer)
     __parent__ = None
 
-    def __init__(self, request, cur_url, proxy_folder_addr):
+    def __init__(self, context, request, cur_url, proxy_folder):
+        self.context = context
         self.request = request
         self.cur_url = cur_url
-        self.proxy_folder_addr = proxy_folder_addr
+        self.id = cur_url[-1]
+        self.proxy_folder = proxy_folder
+        self.proxy_folder_addr = self.proxy_folder.absolute_url()
     
     # TODO: Cache this function
-    def get_url( self ):
-        cur_url = '/'.join( self.cur_url )
+    def get_data( self ):
+        # Build the url
+        cur_url = '/'.join( [ self.cur_url[0] ] + [ urllib.quote( p ) for p in self.cur_url[1:] ] )
         print 'Fetching "%s"' % cur_url
         
         # User agent should be configurable? Or passed through from the client
-        req = urllib2.Request( cur_url, headers = { 'User-Agent': 'Mozilla/5.0 (X11; U; Linux i686) Gecko/20071127 Firefox/2.0.0.11' } )
+        req = urllib2.Request( cur_url, headers = { 'User-Agent': self.request['HTTP_USER_AGENT'] } )
         con = urllib2.urlopen( req )
         
         info = con.info()
@@ -89,14 +101,14 @@ class Proxyer(OFS.SimpleItem.SimpleItem):
             # Rewrite any URLs (in src & href attribs)
             q = pq( con.read() )
             
-            def rewrite_url( url ):
+            def rewrite_url( url, normalize_only = False ):
                 p = urlparse.urlsplit( url )
                 
                 # Convert relative urls to absolute
                 if p.scheme == '' and p.netloc == '': # Relative URL
                     url = urlparse.urljoin( cur_url, url )
                 
-                if url.startswith( self.cur_url[0] ): # Absolute URL within the site
+                if not normalize_only and url.startswith( self.cur_url[0] ): # Absolute URL within the site
                     url = self.proxy_folder_addr + url[len(self.cur_url[0]):]
                 
                 return url
@@ -105,13 +117,16 @@ class Proxyer(OFS.SimpleItem.SimpleItem):
                 q(el).attr( 'href', rewrite_url( q(el).attr( 'href' ) ) )
 
             for el in q( '*[src]' ):
-                q(el).attr( 'src', rewrite_url( q(el).attr( 'src' ) ) )
+                q(el).attr( 'src', rewrite_url( q(el).attr( 'src' ), el.tag == 'img' and not self.proxy_folder.proxy_images ) )
             
-            # Grab specific content and place within normal plone page (optional?)
+            # Grab specific content and place within normal plone page
+            if self.proxy_folder.content_selector:
+                q = q( str( self.proxy_folder.content_selector ) )
             
             return unicode( q )
         else:
             return con.read()
-    
-    def __call__( self ):
-        return self.get_url()
+
+class View( grok.View ):
+    grok.context( IProxyer )
+    grok.name( 'index_html' )

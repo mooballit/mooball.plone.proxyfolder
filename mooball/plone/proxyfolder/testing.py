@@ -14,6 +14,8 @@ class ProxyFolderBase(PloneSandboxLayer):
         # load ZCML
         xmlconfig.file('configure.zcml', mooball.plone.proxyfolder,
                        context=configurationContext)
+        xmlconfig.file('configure.zcml', mooball.plone.proxyfolder.types,
+                       context=configurationContext)
 
     def setUpPloneSite(self, portal):
         # install into the Plone site
