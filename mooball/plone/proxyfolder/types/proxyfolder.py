@@ -44,7 +44,6 @@ class ProxyTraverser(object):
         self.request = request
         
     def publishTraverse(self, request, name):
-        print name
         view = zope.component.queryMultiAdapter(
             (self.context, self.request), name=name)
         if view is not None:
@@ -97,6 +96,11 @@ class Proxyer(OFS.SimpleItem.SimpleItem):
         cur_url = '/'.join( [ self.cur_url[0] ] + [ urllib.quote( p ) for p in self.cur_url[1:] ] )
         
         if self.request['QUERY_STRING'] != '':
+            # Querying http://www.domain.com?query_string will give an error
+            # This fixes it.
+            if cur_url == self.proxy_folder.base_url and not cur_url.endswith( '/' ):
+                cur_url += '/'
+            
             p = urlparse.urlparse( cur_url )
             cur_url = urlparse.urlunparse( p[:4] + ( self.request['QUERY_STRING'], ) + p[5:] )
             
