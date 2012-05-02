@@ -21,10 +21,13 @@ class IProxyFolder( form.Schema ):
     title = schema.TextLine( title=u'Title')
     base_url = schema.TextLine( title=u'Base URL')
     proxy_images = schema.Bool( title = u'Proxy Images?', default = False )
-    content_selector = schema.TextLine( title=u'Content CSS Selector', required = False, description = u'The CSS Selector will be used to grab a specific part of the remove html and place it within the plone design.' )
+    content_selector = schema.TextLine( title=u'Content CSS Selector', required = False,
+        description = u'The CSS Selector will be used to grab a specific part of the remove html and place it within the plone design.' )
     head_data = schema.Text( title=u'Content in Head', required = False )
-    user_agent = schema.TextLine( title = u'HTTP User agent', required = False, description = u'The User Agent to pass with the proxy http requests. Leave empty to just pass through the clients User Agent.' )
-    url_attrs = schema.TextLine( title = u'Extra URL Attributes', required = False, description = u'Comma separated list of attribute names that contain URLs that needs rewriting (ie. other than the standard src and href)' )
+    user_agent = schema.TextLine( title = u'HTTP User agent', required = False,
+        description = u'The User Agent to pass with the proxy http requests. Leave empty to just pass through the clients User Agent.' )
+    url_attrs = schema.TextLine( title = u'Extra URL Attributes', required = False,
+        description = u'Comma separated list of attribute names that contain URLs that needs rewriting (ie. other than the standard src and href)' )
     
 class ProxyFolder( Item ):
     implements( IProxyer )
@@ -56,7 +59,7 @@ class ProxyTraverser(object):
                 raise zope.publisher.interfaces.NotFound(
                     self.context, name, self.request)
 
-            # Start storing the current path in the request
+            # Start storing the current path in the request (not sure if this is the best way to do this...)
             # And strip any trailing slashes
             if self.context.base_url.endswith( '/' ):
                 self.context.base_url = self.context.base_url[:-1]
@@ -70,10 +73,11 @@ class ProxyTraverser(object):
         proxy.__parent__ = self.context
         return proxy.__of__(self.context)
 
-def _get_data_cachekey( method, self ):
-    # Will cache a specific page for a day.
-    return ( self.cur_url, time() // ( 60 * 60 * 24 ), self.proxy_folder.base_url, self.proxy_folder.proxy_images, self.proxy_folder.content_selector, self.proxy_folder.url_attrs )
 
+def _get_data_cachekey( method, self ):
+    # Will cache a specific page ( plus any data sent to page via POST/GET ) for a day.
+    # Also supports change-of-settings invalidation
+    return ( self.cur_url, self.request.form, time() // ( 60 * 60 * 24 ), self.proxy_folder.base_url, self.proxy_folder.proxy_images, self.proxy_folder.content_selector, self.proxy_folder.url_attrs )
 
 class Proxyer(OFS.SimpleItem.SimpleItem):
     implements(IProxyer)
@@ -91,10 +95,31 @@ class Proxyer(OFS.SimpleItem.SimpleItem):
     def get_data( self ):
         # Build the url
         cur_url = '/'.join( [ self.cur_url[0] ] + [ urllib.quote( p ) for p in self.cur_url[1:] ] )
+        
+        if self.request['QUERY_STRING'] != '':
+            p = urlparse.urlparse( cur_url )
+            cur_url = urlparse.urlunparse( p[:4] + ( self.request['QUERY_STRING'], ) + p[5:] )
+            
         print 'Fetching "%s"' % cur_url
         
-        # User agent should be configurable? Or passed through from the client
-        req = urllib2.Request( cur_url, headers = { 'User-Agent': self.request['HTTP_USER_AGENT'] } )
+        req = urllib2.Request( cur_url, headers = { 'User-Agent': self.proxy_folder.user_agent or self.request['HTTP_USER_AGENT'] } )
+
+        post_data = self.request.form
+        
+        if post_data:
+            # Pass on any POST data.
+            
+            # Because there is no specific source for only POST data in Zope
+            # we need to use data from request['form'] and then remove
+            # anything that has the same keys as what is in the QUERY_STRING
+            if self.request['QUERY_STRING'] != '':
+                for key in urlparse.parse_qs( self.request['QUERY_STRING'] ):
+                    if key in post_data:
+                        del post_data[ key ]
+            
+            if post_data:
+                req.add_data( urllib.urlencode( post_data ) )
+
         con = urllib2.urlopen( req )
         
         info = con.info()
@@ -113,16 +138,17 @@ class Proxyer(OFS.SimpleItem.SimpleItem):
                 p = urlparse.urlsplit( url )
                 
                 # Convert relative urls to absolute
-                if p.scheme == '' and p.netloc == '': # Relative URL
+                if p.scheme == '' and p.netloc == '':
                     url = urlparse.urljoin( cur_url, url )
                 
-                if not normalize_only and url.startswith( self.cur_url[0] ): # Absolute URL within the site
+                # Rewrite the absolute urls (if they are from the remote site)
+                if not normalize_only and url.startswith( self.cur_url[0] ):
                     url = self.proxy_folder_addr + url[len(self.cur_url[0]):]
                 
                 return url
             
+            # Find any URL attributes and rewrite them
             url_attrs = ['href','src']
-            
             if self.proxy_folder.url_attrs:
                 url_attrs += [ a.strip() for a in str( self.proxy_folder.url_attrs ).split(',') ]
             
