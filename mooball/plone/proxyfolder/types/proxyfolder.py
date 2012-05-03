@@ -12,6 +12,7 @@ from pyquery import PyQuery as pq
 import urllib, urllib2, urlparse
 from time import time
 from plone.memoize import ram
+from z3c.form import field
 
 class IProxyer( Interface ):
     def get_data():
@@ -28,7 +29,26 @@ class IProxyFolder( form.Schema ):
         description = u'The User Agent to pass with the proxy http requests. Leave empty to just pass through the clients User Agent.' )
     url_attrs = schema.TextLine( title = u'Extra URL Attributes', required = False,
         description = u'Comma separated list of attribute names that contain URLs that needs rewriting (ie. other than the standard src and href)' )
+
+class EditForm( form.SchemaEditForm ):
+    grok.name( 'edit' )
+    grok.context( IProxyFolder )
     
+    schema = IProxyFolder
+    
+    fields = field.Fields(IProxyFolder)
+    
+    def update( self ):
+        # TODO: Add code to remove trailing slashes from base_url field
+        #       Remove similar functionality from elsewhere in this code.
+            
+        super( EditForm, self ).update()
+    
+    def updateWidgets( self ):
+        super( EditForm, self ).updateWidgets()
+        self.widgets['head_data'].style = u"height: 300px;"
+    
+
 class ProxyFolder( Item ):
     implements( IProxyer )
     
@@ -59,7 +79,6 @@ class ProxyTraverser(object):
                     self.context, name, self.request)
 
             # Start storing the current path in the request (not sure if this is the best way to do this...)
-            # And strip any trailing slashes
             if self.context.base_url.endswith( '/' ):
                 self.context.base_url = self.context.base_url[:-1]
             
