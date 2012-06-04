@@ -9,14 +9,21 @@ import z3c.traverser.interfaces
 import zope.component
 import zope.publisher.interfaces
 from pyquery import PyQuery as pq
-import urllib, urllib2, urlparse
+import urllib, urllib2, urlparse, re
 from time import time
 from plone.memoize import ram
 from z3c.form import field
+from plone.namedfile.utils import set_headers, stream_data
 
-class IProxyer( Interface ):
+class IProxyTraversable( Interface ):
+    pass
+
+class IProxyHTML( Interface ):
     def get_data():
-        '''Fetches the data from the provided url'''
+        pass
+class IProxyData( Interface ):
+    def get_data():
+        pass
 
 class IProxyFolder( form.Schema ):
     title = schema.TextLine( title=u'Title')
@@ -29,6 +36,10 @@ class IProxyFolder( form.Schema ):
         description = u'The User Agent to pass with the proxy http requests. Leave empty to just pass through the clients User Agent.' )
     url_attrs = schema.TextLine( title = u'Extra URL Attributes', required = False,
         description = u'Comma separated list of attribute names that contain URLs that needs rewriting (ie. other than the standard src and href)' )
+    exclude_urls = schema.Text( title = u'Non-template URLs', required = False,
+        description = u'Each line is a regular expression that when matched against a URL will supress the plone header and footer from being applied to it\'s data. The Content CSS Selector will not be applied either. Any links, however, will be rewriten as usual.')
+    exclude_ajax = schema.Bool( title = u'Dont apply template to AJAX requests?', default = True,
+        description = u'This will make sure any AJAX request do not get the Plone Template applied to them. If this does not work, please use the above field to match URLs instead.')
 
 class EditForm( form.SchemaEditForm ):
     grok.name( 'edit' )
@@ -47,16 +58,23 @@ class EditForm( form.SchemaEditForm ):
     def updateWidgets( self ):
         super( EditForm, self ).updateWidgets()
         self.widgets['head_data'].style = u"height: 300px;"
+        self.widgets['exclude_urls'].style = u"height: 150px; width: 600px;"
     
 
 class ProxyFolder( Item ):
-    implements( IProxyer )
+    implements( IProxyTraversable, IProxyHTML )
     
     def get_data( self ):
-        proxy = Proxyer( self, self.REQUEST, [ self.base_url ], self )
-        proxy.__parent__ = self
-        return proxy.__of__(self).get_data()
+        return get_data( [ self.base_url ], self, self.REQUEST ).get_data()
         
+
+class DummyItem( grok.Model ):
+    implements( IProxyTraversable )
+    
+    def __init__( self, cur_url, proxy_folder ):
+        self.cur_url = cur_url
+        self.proxy_folder = proxy_folder
+
 
 class ProxyTraverser(object):
     def __init__(self, context, request):
@@ -71,122 +89,171 @@ class ProxyTraverser(object):
         elif hasattr(self.context, name):
             return getattr(self.context, name)
 
-        # Check if this is the first step in the traversal
-        if 'cur_remote_path' not in self.request:
-            # Check if there is actually a base_url set.
-            if not self.context.base_url:
-                raise zope.publisher.interfaces.NotFound(
-                    self.context, name, self.request)
-
-            # Start storing the current path in the request (not sure if this is the best way to do this...)
-            if self.context.base_url.endswith( '/' ):
-                self.context.base_url = self.context.base_url[:-1]
-            
-            self.request['cur_remote_path'] = [ self.context.base_url ]
-            self.request['proxy_folder'] = self.context
-
-        self.request['cur_remote_path'].append( name )
-        
-        proxy = Proxyer( self.context, self.request, self.request['cur_remote_path'],self.request['proxy_folder'] )
-        proxy.__parent__ = self.context
-        return proxy.__of__(self.context)
-
-
-def _get_data_cachekey( method, self ):
-    # Will cache a specific page ( plus any data sent to page via POST/GET ) for a day.
-    # Also supports change-of-settings invalidation
-    return ( self.cur_url, self.request.form, time() // ( 60 * 60 * 24 ), self.proxy_folder.base_url, self.proxy_folder.proxy_images, self.proxy_folder.content_selector, self.proxy_folder.url_attrs )
-
-class Proxyer(OFS.SimpleItem.SimpleItem):
-    implements(IProxyer)
-    __parent__ = None
-
-    def __init__(self, context, request, cur_url, proxy_folder):
-        self.context = context
-        self.request = request
-        self.cur_url = cur_url
-        self.id = cur_url[-1]
-        self.proxy_folder = proxy_folder
-        self.proxy_folder_addr = self.proxy_folder.absolute_url()
-    
-    @ram.cache( _get_data_cachekey )
-    def get_data( self ):
-        # Build the url
-        cur_url = '/'.join( [ self.cur_url[0] ] + [ urllib.quote( p ) for p in self.cur_url[1:] ] )
-        
-        if self.request['QUERY_STRING'] != '':
-            # Querying http://www.domain.com?query_string will give an error
-            # This fixes it.
-            if cur_url == self.proxy_folder.base_url and not cur_url.endswith( '/' ):
-                cur_url += '/'
-            
-            p = urlparse.urlparse( cur_url )
-            cur_url = urlparse.urlunparse( p[:4] + ( self.request['QUERY_STRING'], ) + p[5:] )
-            
-        print 'Fetching "%s"' % cur_url
-        
-        req = urllib2.Request( cur_url, headers = { 'User-Agent': self.proxy_folder.user_agent or self.request['HTTP_USER_AGENT'] } )
-
-        post_data = self.request.form
-        
-        if post_data:
-            # Pass on any POST data.
-            
-            # Because there is no specific source for only POST data in Zope
-            # we need to use data from request['form'] and then remove
-            # anything that has the same keys as what is in the QUERY_STRING
-            if self.request['QUERY_STRING'] != '':
-                for key in urlparse.parse_qs( self.request['QUERY_STRING'] ):
-                    if key in post_data:
-                        del post_data[ key ]
-            
-            if post_data:
-                req.add_data( urllib.urlencode( post_data ) )
-
-        con = urllib2.urlopen( req )
-        
-        info = con.info()
-        
-        # Get the url in case it has been redirected
-        cur_url = con.geturl()
-        
-        # Make sure the content-type is passed on
-        self.request.response.setHeader( 'Content-Type', info['Content-Type'] )
-        
-        if info.gettype() == 'text/html':
-            q = pq( con.read() )
-            
-            # Rewrite any URLs (in src & href attribs + user specified ones)
-            def rewrite_url( url, normalize_only = False ):
-                p = urlparse.urlsplit( url )
-                
-                # Convert relative urls to absolute
-                if p.scheme == '' and p.netloc == '':
-                    url = urlparse.urljoin( cur_url, url )
-                
-                # Rewrite the absolute urls (if they are from the remote site)
-                if not normalize_only and url.startswith( self.cur_url[0] ):
-                    url = self.proxy_folder_addr + url[len(self.cur_url[0]):]
-                
-                return url
-            
-            # Find any URL attributes and rewrite them
-            url_attrs = ['href','src']
-            if self.proxy_folder.url_attrs:
-                url_attrs += [ a.strip() for a in str( self.proxy_folder.url_attrs ).split(',') ]
-            
-            for attr in url_attrs:
-                for el in q( '*[%s]' % attr ):
-                    q(el).attr( attr, rewrite_url( q(el).attr( attr ), el.tag == 'img' and not self.proxy_folder.proxy_images ) )
-            
-            # Grab specific content and place within normal plone page
-            if self.proxy_folder.content_selector:
-                q = q( str( self.proxy_folder.content_selector ) )
-            
-            return unicode( q ).replace( u'&#13;', u'\n' )
+        if isinstance( self.context, ProxyFolder ):
+            cur_url = [ self.context.base_url ]
+            proxy_folder = self.context
         else:
-            return con.read()
+            cur_url = self.context.cur_url
+            proxy_folder = self.context.proxy_folder
+        
+        cur_url.append( name )
+
+        if self.request.path == []: # Traverser at end of url
+            return get_data( cur_url, proxy_folder, self.request )
+        else:
+            if isinstance( self.context, ProxyFolder ):
+                return DummyItem( cur_url, self.context )
+            else:
+                return self.context
 
 class View( grok.View ):
-    grok.context( IProxyer )
-    grok.name( 'index_html' )
+    grok.context( IProxyHTML )
+    grok.name( 'index' )
+
+class DataView( grok.View ):
+    grok.context( IProxyData )
+    grok.name( 'index' )
+    
+    def render( self ):
+        return self.context.get_data()
+
+
+class ProxyHTML( grok.Model ):
+    implements( IProxyHTML )
+    
+    __parent__ = None
+    _id = None
+    
+    def __init__( self, data ):
+        self.data = data
+    
+    def get_data( self ):
+        return self.data
+
+class ProxyData( grok.Model ):
+    implements( IProxyData )
+    
+    __parent__ = None
+    _id = None
+    
+    def __init__( self, data ):
+        self.data = data
+    
+    def get_data( self ):
+        return self.data
+
+def _get_data_cachekey( method, url, proxy_folder, request ):
+    # Will cache a specific page ( plus any data sent to page via POST/GET ) for a day.
+    # Also supports change-of-settings invalidation
+    return ( url, request.form, time() // ( 60 * 60 * 24 ), proxy_folder.base_url, proxy_folder.proxy_images, proxy_folder.content_selector, proxy_folder.url_attrs, proxy_folder.exclude_urls )
+
+@ram.cache( _get_data_cachekey )
+def get_data( url, proxy_folder, request ):
+    proxy_folder_addr = proxy_folder.absolute_url()
+
+    # Build the url
+    req_url = '/'.join( [ url[0] ] + [ urllib.quote( p ) for p in url[1:] ] )
+    
+    print 'Fetching %s ...' % req_url,
+
+    if request['QUERY_STRING'] != '':
+        # Querying http://www.domain.com?query_string will give an error
+        # This fixes it.
+        if req_url == proxy_folder.base_url and not req_url.endswith( '/' ):
+            req_url += '/'
+        
+        p = urlparse.urlparse( req_url )
+        req_url = urlparse.urlunparse( p[:4] + ( request['QUERY_STRING'], ) + p[5:] )
+        
+    req = urllib2.Request( req_url, headers = { 'User-Agent': proxy_folder.user_agent or request['HTTP_USER_AGENT'], 'X-Requested-With': request['HTTP_X_REQUESTED_WITH'] } )
+
+    post_data = request.form
+    
+    if post_data:
+        # Pass on any POST data.
+        
+        # Because there is no specific source for only POST data in Zope
+        # we need to use data from request['form'] and then remove
+        # anything that has the same keys as what is in the QUERY_STRING
+        if request['QUERY_STRING'] != '':
+            for key in urlparse.parse_qs( request['QUERY_STRING'] ):
+                if key in post_data:
+                    del post_data[ key ]
+        
+        if post_data:
+            req.add_data( urllib.urlencode( post_data ) )
+
+    con = urllib2.urlopen( req )
+    
+    print 'DONE'
+    
+    info = con.info()
+    
+    # Get the url in case it has been redirected
+    req_url = con.geturl()
+    
+    # Make sure the content-type is passed on
+    request.response.setHeader( 'Content-Type', info['Content-Type'] )
+    
+    if info.gettype() == 'text/html':
+        q = pq( con.read() )
+        
+        # Rewrite any URLs (in src & href attribs + user specified ones)
+        def rewrite_url( attr_url, normalize_only = False ):
+            if attr_url.startswith( '#' ):
+                return attr_url
+                
+            p = urlparse.urlsplit( attr_url )
+            
+            # Convert relative urls to absolute
+            if p.scheme == '' and p.netloc == '':
+                attr_url = urlparse.urljoin( req_url, attr_url )
+            
+            # Rewrite the absolute urls (if they are from the remote site)
+            if not normalize_only and attr_url.startswith( url[0] ):
+                attr_url = proxy_folder_addr + attr_url[ len( url[0] ): ]
+            
+            return attr_url
+        
+        # Find any URL attributes and rewrite them
+        url_attrs = ['href','src','action']
+        if proxy_folder.url_attrs:
+            url_attrs += [ a.strip() for a in str( proxy_folder.url_attrs ).split(',') ]
+        
+        for attr in url_attrs:
+            for el in q( '*[%s]' % attr ):
+                q(el).attr( attr, rewrite_url( q(el).attr( attr ), el.tag == 'img' and not proxy_folder.proxy_images ) )
+        
+        # Check if it is an ajax query and if it should not use the template
+        if proxy_folder.exclude_ajax and request['HTTP_X_REQUESTED_WITH'] == 'XMLHttpRequest':
+            ret = ProxyData( unicode( q ).replace( u'&#13;', u'\n' ) )
+            ret.__parent__ = proxy_folder
+            ret._id = url[-1]
+            return ret
+        
+        # Check if the url is to be excluded from the template
+        if proxy_folder.exclude_urls:
+            exclude_urls = [ re.compile( line.strip() ) for line in proxy_folder.exclude_urls.split( '\n' ) ]
+            for eu in exclude_urls:
+                if eu.match( req_url ):
+                    ret = ProxyData( unicode( q ).replace( u'&#13;', u'\n' ) )
+                    ret.__parent__ = proxy_folder
+                    ret._id = url[-1]
+                    return ret
+
+
+        # Grab specific content and place within normal plone page
+        if proxy_folder.content_selector:
+            q = q( str( proxy_folder.content_selector ) )
+        
+        
+        ret = ProxyHTML( unicode( q ).replace( u'&#13;', u'\n' ) )
+        ret.__parent__ = proxy_folder
+        ret._id = url[-1]
+        
+        return ret.__of__( proxy_folder )
+    else:
+        ret = ProxyData( con.read() )
+        ret.__parent__ = proxy_folder
+        ret._id = url[-1]
+        return ret

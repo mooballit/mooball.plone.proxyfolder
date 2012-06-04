@@ -20,13 +20,13 @@
     
   <adapter
     factory="z3c.traverser.traverser.PluggableTraverser"
-    for=".proxyfolder.IProxyer
+    for=".proxyfolder.IProxyTraversable
          zope.publisher.interfaces.IPublisherRequest"
     />
   
   <subscriber
     factory=".proxyfolder.ProxyTraverser"
-    for=".proxyfolder.IProxyer
+    for=".proxyfolder.IProxyTraversable
          zope.publisher.interfaces.IPublisherRequest"
     provides="z3c.traverser.interfaces.ITraverserPlugin"
     />
