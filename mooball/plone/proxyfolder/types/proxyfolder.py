@@ -99,7 +99,11 @@ class ProxyTraverser(object):
         cur_url.append( name )
 
         if self.request.path == []: # Traverser at end of url
-            return get_data( cur_url, proxy_folder, self.request )
+            ret = get_data( cur_url, proxy_folder, self.request )
+            # Because the get_data function is cached sometimes, the returned object's REQUEST attr might not be correct (missing stuff).
+            # So therefore we just set it to the correct one
+            ret.REQUEST = self.request
+            return ret
         else:
             if isinstance( self.context, ProxyFolder ):
                 return DummyItem( cur_url, self.context )
