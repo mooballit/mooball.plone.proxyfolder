@@ -4,7 +4,7 @@
 <!-- Basic metadata -->
  <property name="title" i18n:translate="">Proxy Folder</property>
  <property name="description" i18n:translate=""></property>
- <property name="content_icon"></property>
+ <property name="content_icon">++resource++mooball.plone.proxyfolder.icons/folder-remote.png</property>
  <property name="allow_discussion">False</property>
  <property name="global_allow">True</property>
  <property name="filter_content_types">True</property>

@@ -1,6 +1,7 @@
 <configure
     xmlns="http://namespaces.zope.org/zope"
     xmlns:grok="http://namespaces.zope.org/grok"
+    xmlns:browser="http://namespaces.zope.org/browser"
     i18n_domain="mooball.plone.proxyfolder">
 
   <grok:grok package="." />
@@ -29,6 +30,11 @@
     for=".proxyfolder.IProxyTraversable
          zope.publisher.interfaces.IPublisherRequest"
     provides="z3c.traverser.interfaces.ITraverserPlugin"
+    />
+
+    <browser:resourceDirectory
+        name="mooball.plone.proxyfolder.icons"
+        directory="icons"
     />
 
 </configure>
