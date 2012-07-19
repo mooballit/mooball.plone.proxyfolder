@@ -52,13 +52,28 @@ class EditForm( form.SchemaEditForm ):
     def update( self ):
         # TODO: Add code to remove trailing slashes from base_url field
         #       Remove similar functionality from elsewhere in this code.
-            
+        
+        # Check if the clear_cache checkbox was ticked
+        if 'form.widgets.clear_cache' in self.request.form:
+            if self.request.form.pop( 'form.widgets.clear_cache' ):
+                # Invalidate the cache for the get_data function.
+                ram.choose_cache( 'mooball.plone.proxyfolder.types.proxyfolder.get_data' ).ramcache.invalidate( 'mooball.plone.proxyfolder.types.proxyfolder.get_data' )
+        
         super( EditForm, self ).update()
     
     def updateWidgets( self ):
+        self.fields += field.Fields(
+            schema.Bool(
+                __name__ = 'clear_cache',
+                title = u'Clear the cache',
+                required = False
+            
+             )
+        )
         super( EditForm, self ).updateWidgets()
         self.widgets['head_data'].style = u"height: 300px;"
         self.widgets['exclude_urls'].style = u"height: 150px; width: 600px;"
+        
     
 
 class ProxyFolder( Item ):
