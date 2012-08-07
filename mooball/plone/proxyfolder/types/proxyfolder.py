@@ -134,6 +134,7 @@ class DataView( grok.View ):
     grok.name( 'index' )
     
     def render( self ):
+        self.request.response.setHeader( 'Content-Type', self.context.content_type )
         return self.context.get_data()
 
 
@@ -142,6 +143,8 @@ class ProxyHTML( grok.Model ):
     
     __parent__ = None
     _id = None
+    
+    content_type = 'text/html'
     
     def __init__( self, data ):
         self.data = data
@@ -155,7 +158,8 @@ class ProxyData( grok.Model ):
     __parent__ = None
     _id = None
     
-    def __init__( self, data ):
+    def __init__( self, data, content_type ):
+        self.content_type = content_type
         self.data = data
     
     def get_data( self ):
@@ -245,7 +249,7 @@ def get_data( url, proxy_folder, request ):
         
         # Check if it is an ajax query and if it should not use the template
         if proxy_folder.exclude_ajax and request['HTTP_X_REQUESTED_WITH'] == 'XMLHttpRequest':
-            ret = ProxyData( unicode( q ).replace( u'&#13;', u'\n' ) )
+            ret = ProxyData( unicode( q ).replace( u'&#13;', u'\n' ), info['Content-Type'] )
             ret.__parent__ = proxy_folder
             ret._id = url[-1]
             return ret
@@ -255,7 +259,7 @@ def get_data( url, proxy_folder, request ):
             exclude_urls = [ re.compile( line.strip() ) for line in proxy_folder.exclude_urls.split( '\n' ) ]
             for eu in exclude_urls:
                 if eu.match( req_url ):
-                    ret = ProxyData( unicode( q ).replace( u'&#13;', u'\n' ) )
+                    ret = ProxyData( unicode( q ).replace( u'&#13;', u'\n' ), info['Content-Type'] )
                     ret.__parent__ = proxy_folder
                     ret._id = url[-1]
                     return ret
@@ -272,7 +276,7 @@ def get_data( url, proxy_folder, request ):
         
         return ret.__of__( proxy_folder )
     else:
-        ret = ProxyData( con.read() )
+        ret = ProxyData( con.read(), info['Content-Type'] )
         ret.__parent__ = proxy_folder
         ret._id = url[-1]
         return ret
