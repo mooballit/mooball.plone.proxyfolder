@@ -40,6 +40,8 @@ class IProxyFolder( form.Schema ):
         description = u'Each line is a regular expression that when matched against a URL will supress the plone header and footer from being applied to it\'s data. The Content CSS Selector will not be applied either. Any links, however, will be rewriten as usual.')
     exclude_ajax = schema.Bool( title = u'Dont apply template to AJAX requests?', default = True,
         description = u'This will make sure any AJAX request do not get the Plone Template applied to them. If this does not work, please use the above field to match URLs instead.')
+    nocache_urls = schema.Text( title = u'Do not cache these URLs', required = False,
+        description = u'Each line is a regular expression that when matched against a URL will prevent it from being cached')
 
 class EditForm( form.SchemaEditForm ):
     grok.name( 'edit' )
@@ -55,7 +57,7 @@ class EditForm( form.SchemaEditForm ):
         
         # Check if the clear_cache checkbox was ticked
         if 'form.widgets.clear_cache' in self.request.form:
-            if self.request.form.pop( 'form.widgets.clear_cache' ):
+            if self.request.form.pop( 'form.widgets.clear_cache' ): #pop-n-check!
                 # Invalidate the cache for the get_data function.
                 ram.choose_cache( 'mooball.plone.proxyfolder.types.proxyfolder.get_data' ).ramcache.invalidate( 'mooball.plone.proxyfolder.types.proxyfolder.get_data' )
         
@@ -168,6 +170,14 @@ class ProxyData( grok.Model ):
 def _get_data_cachekey( method, url, proxy_folder, request ):
     # Will cache a specific page ( plus any data sent to page via POST/GET ) for a day.
     # Also supports change-of-settings invalidation
+    
+    # Check if the url is to be excluded from cache
+    if proxy_folder.nocache_urls:
+        for nc_url in proxy_folder.nocache_urls.split( '\n' ):
+            if re.match( nc_url.strip(), '/'.join( url ) ):
+                print 'nocache!'
+                raise ram.DontCache
+    
     return ( url, request.form, time() // ( 60 * 60 * 24 ), proxy_folder.base_url, proxy_folder.proxy_images, proxy_folder.content_selector, proxy_folder.url_attrs, proxy_folder.exclude_urls )
 
 @ram.cache( _get_data_cachekey )
