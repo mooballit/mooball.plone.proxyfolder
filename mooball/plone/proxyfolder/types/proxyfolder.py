@@ -9,7 +9,7 @@ import z3c.traverser.interfaces
 import zope.component
 import zope.publisher.interfaces
 from pyquery import PyQuery as pq
-import urllib, urllib2, urlparse, re
+import urllib, urllib2, urlparse, re, Cookie
 from time import time
 from plone.memoize import ram
 from z3c.form import field
@@ -227,7 +227,41 @@ def get_data( url, proxy_folder, request ):
         if post_data:
             req.add_data( urllib.urlencode( post_data ) )
 
-    con = urllib2.urlopen( req )
+    # Prevents redirects from being handled.
+    class RedirectPreventer( urllib2.HTTPRedirectHandler ):
+        def http_error_302( self, req, fp, code, msg, headers ):
+            pass
+        
+        http_error_301 = http_error_303 = http_error_307 = http_error_302
+
+    opener = urllib2.build_opener( RedirectPreventer )
+    urllib2.install_opener( opener )
+
+    try:
+        con = urllib2.urlopen( req )
+    except urllib2.HTTPError, e:
+        # If it is a redirect error rewrite the location and pass the redirect on
+        if e.code in [ 301, 302, 303, 307 ]:
+            # Pass on any cookies
+            if e.hdrs.get( 'set-cookie' ):
+                cookies = Cookie.BaseCookie( e.hdrs.get( 'set-cookie' ) )
+                
+                for cookie in cookies.values():
+                    request.response.appendHeader( 'set-cookie', cookie.OutputString() )
+                
+            # Rewrite the location
+            location = e.hdrs['location']
+            location = '/'.join( list( proxy_folder.getPhysicalPath() ) + location.split( '/' )[1:] )
+            
+            request.response.redirect( location, status = e.code )
+            
+            ret = ProxyData( '', 'text/plain' )
+            ret.__parent__ = proxy_folder
+            ret._id = url[-1]
+            return ret
+
+        raise
+
     
     print 'DONE'
     
