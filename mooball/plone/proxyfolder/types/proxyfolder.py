@@ -42,6 +42,8 @@ class IProxyFolder( form.Schema ):
         description = u'This will make sure any AJAX request do not get the Plone Template applied to them. If this does not work, please use the above field to match URLs instead.')
     nocache_urls = schema.Text( title = u'Do not cache these URLs', required = False,
         description = u'Each line is a regular expression that when matched against a URL will prevent it from being cached')
+    nocache_cookies = schema.Text( title = u'Do not cache pages when these cookies are set', required = False,
+        description = u'Each line is the key name of a cookie which, when set, will prevent anything from being cached.')
 
 class EditForm( form.SchemaEditForm ):
     grok.name( 'edit' )
@@ -171,6 +173,13 @@ def _get_data_cachekey( method, url, proxy_folder, request ):
     # Will cache a specific page ( plus any data sent to page via POST/GET ) for a day.
     # Also supports change-of-settings invalidation
     
+    # Check if specific cookies are set thus disabling caching.
+    if proxy_folder.nocache_cookies:
+        for nc_cookie in proxy_folder.nocache_cookies.split( '\n' ):
+            if nc_cookie.strip() in request.cookies:
+                print 'nocache! cause of cookieeee'
+                raise ram.DontCache
+                
     # Check if the url is to be excluded from cache
     if proxy_folder.nocache_urls:
         for nc_url in proxy_folder.nocache_urls.split( '\n' ):
@@ -197,8 +206,10 @@ def get_data( url, proxy_folder, request ):
         
         p = urlparse.urlparse( req_url )
         req_url = urlparse.urlunparse( p[:4] + ( request['QUERY_STRING'], ) + p[5:] )
-        
-    req = urllib2.Request( req_url, headers = { 'User-Agent': proxy_folder.user_agent or request['HTTP_USER_AGENT'], 'X-Requested-With': request['HTTP_X_REQUESTED_WITH'] } )
+    
+    req = urllib2.Request( req_url, headers = { 'User-Agent': proxy_folder.user_agent or request['HTTP_USER_AGENT'],
+                                                'X-Requested-With': request['HTTP_X_REQUESTED_WITH'],
+                                                'Cookie': request['HTTP_COOKIE'] } )
 
     post_data = request.form
     
@@ -226,7 +237,11 @@ def get_data( url, proxy_folder, request ):
     req_url = con.geturl()
     
     # Make sure the content-type is passed on
-    request.response.setHeader( 'Content-Type', info['Content-Type'] )
+    request.response.setHeader( 'Content-Type', info[ 'Content-Type' ] )
+    
+    # Make sure cookies are passed on as well.
+    if info.get( 'set-cookie' ):
+        request.response.appendHeader( 'Set-Cookie', info.get( 'set-cookie' ) )
     
     if info.gettype() == 'text/html':
         q = pq( con.read() )
