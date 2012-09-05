@@ -14,6 +14,7 @@ from time import time
 from plone.memoize import ram
 from z3c.form import field
 from plone.namedfile.utils import set_headers, stream_data
+from zope.globalrequest import getRequest
 
 class IProxyTraversable( Interface ):
     pass
@@ -169,6 +170,29 @@ class ProxyData( grok.Model ):
     def get_data( self ):
         return self.data
 
+class ProxyRedirect( ProxyData ):
+    data = ''
+    content_type = 'text/plain'
+    
+    def __init__( self, location, cookies, code ):
+        self.cookies = cookies
+        self.location = location
+        self.code = code
+    
+    def get_data( self ):
+        request = getRequest()
+
+        # Set any cookies
+        if self.cookies:
+            for cookie in self.cookies.values():
+                request.response.appendHeader( 'set-cookie', cookie.OutputString() )
+
+        # Do redirect
+        request.response.redirect( self.location, status = self.code )
+        
+        return self.data
+
+
 def _get_data_cachekey( method, url, proxy_folder, request ):
     # Will cache a specific page ( plus any data sent to page via POST/GET ) for a day.
     # Also supports change-of-settings invalidation
@@ -245,17 +269,15 @@ def get_data( url, proxy_folder, request ):
             # Pass on any cookies
             if e.hdrs.get( 'set-cookie' ):
                 cookies = Cookie.BaseCookie( e.hdrs.get( 'set-cookie' ) )
-                
-                for cookie in cookies.values():
-                    request.response.appendHeader( 'set-cookie', cookie.OutputString() )
+            else:
+                cookies = None
+
                 
             # Rewrite the location
             location = e.hdrs['location']
             location = '/'.join( list( proxy_folder.getPhysicalPath() ) + location.split( '/' )[1:] )
             
-            request.response.redirect( location, status = e.code )
-            
-            ret = ProxyData( '', 'text/plain' )
+            ret = ProxyRedirect( location, cookies, e.code )
             ret.__parent__ = proxy_folder
             ret._id = url[-1]
             return ret
